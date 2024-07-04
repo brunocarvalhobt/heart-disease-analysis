@@ -1,0 +1,150 @@
+# Importação de bibliotecas
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.svm import SVC
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve, auc
+from sklearn.preprocessing import StandardScaler
+from imblearn.over_sampling import SMOTE
+import matplotlib.pyplot as plt
+import seaborn as sns
+from ucimlrepo import fetch_ucirepo 
+
+def load_data():
+    heart_disease = fetch_ucirepo(id=45)
+
+    x = heart_disease.data.features 
+    y = heart_disease.data.targets
+
+    return x, y
+
+dados_x, dados_y = load_data()
+data = pd.concat([dados_x, dados_y], axis=1)
+
+# Adicionar nomes das colunas
+column_names = [
+    'age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 'thalach', 'exang', 'oldpeak',
+    'slope', 'ca', 'thal', 'target'
+]
+data.columns = column_names
+
+# Visualização inicial dos dados
+print(data.head())
+
+# Análise descritiva
+print(data.describe())
+
+# Distribuição das variáveis categóricas
+categorical_cols = ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'ca', 'thal']
+for col in categorical_cols:
+    sns.countplot(x=col, data=data)
+    plt.show()
+
+# Correlação entre variáveis
+plt.figure(figsize=(12, 8))
+sns.heatmap(data.corr(), annot=True, cmap='coolwarm')
+plt.show()
+
+# Limpeza dos Dados
+data = data.fillna(data.mean())
+data = data.replace('?', np.nan)  # Substituindo valores desconhecidos
+data = data.dropna()  # Removendo valores faltantes
+
+# Transformação de variáveis categóricas
+data = pd.get_dummies(data, drop_first=True)
+
+# Feature Engineering
+data['age_bins'] = pd.cut(data['age'], bins=[29, 40, 50, 60, 70, 77], labels=[1, 2, 3, 4, 5])
+data['chol_bins'] = pd.cut(data['chol'], bins=[125, 200, 240, 300, 564], labels=[1, 2, 3, 4])
+data['thalach_bins'] = pd.cut(data['thalach'], bins=[70, 100, 130, 160, 210], labels=[1, 2, 3, 4])
+
+# Normalização dos dados
+scaler = StandardScaler()
+data[['age', 'trestbps', 'chol', 'thalach', 'oldpeak']] = scaler.fit_transform(data[['age', 'trestbps', 'chol', 'thalach', 'oldpeak']])
+
+# Balanceamento de Classes
+X = data.drop('target', axis=1)
+y = data['target']
+
+imputer = SimpleImputer(strategy='mean')
+X_imputed = imputer.fit_transform(X)
+
+smote = SMOTE(random_state=42)
+X_res, y_res = smote.fit_resample(X_imputed, y)
+
+# Divisão dos Dados
+X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.2, random_state=42)
+
+# Função para Treinamento e Avaliação dos Modelos
+def train_and_evaluate_model(model, params):
+    grid_search = GridSearchCV(model, params, cv=10, scoring='accuracy')
+    grid_search.fit(X_train, y_train)
+    best_model = grid_search.best_estimator_
+    y_pred = best_model.predict(X_test)
+    
+    # Métricas de Desempenho
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted')
+    recall = recall_score(y_test, y_pred, average='weighted')
+    f1 = f1_score(y_test, y_pred, average='weighted')
+    conf_matrix = confusion_matrix(y_test, y_pred)
+    
+    return best_model, accuracy, precision, recall, f1, conf_matrix
+
+# Random Forest
+rf_params = {'n_estimators': [100, 200], 'max_depth': [None, 10, 20], 'min_samples_split': [2, 5]}
+rf_model, rf_acc, rf_prec, rf_rec, rf_f1, rf_conf_matrix = train_and_evaluate_model(RandomForestClassifier(), rf_params)
+
+# Support Vector Machine
+svm_params = {'kernel': ['linear', 'rbf'], 'C': [1, 10], 'gamma': [0.1, 1]}
+svm_model, svm_acc, svm_prec, svm_rec, svm_f1, svm_conf_matrix = train_and_evaluate_model(SVC(probability=True), svm_params)
+
+# Gradient Boosting
+gb_params = {'n_estimators': [100, 200], 'learning_rate': [0.01, 0.1], 'max_depth': [3, 5, 7]}
+gb_model, gb_acc, gb_prec, gb_rec, gb_f1, gb_conf_matrix = train_and_evaluate_model(GradientBoostingClassifier(), gb_params)
+
+# Apresentação dos Resultados
+results = pd.DataFrame({
+    'Model': ['Random Forest', 'SVM', 'Gradient Boosting'],
+    'Accuracy': [rf_acc, svm_acc, gb_acc],
+    'Precision': [rf_prec, svm_prec, gb_prec],
+    'Recall': [rf_rec, svm_rec, gb_rec],
+    'F1 Score': [rf_f1, svm_f1, gb_f1]
+})
+
+print(results)
+
+# Gráficos
+# Curvas ROC
+def plot_roc_curve(model, X_test, y_test, label):
+    y_prob = model.predict_proba(X_test)
+    n_classes = len(model.classes_)
+
+    # Calcula a curva ROC para cada classe
+    for i in range(n_classes):
+        fpr, tpr, _ = roc_curve(y_test == i, y_prob[:, i])
+        roc_auc = auc(fpr, tpr)
+        plt.plot(fpr, tpr, label=f'Class {i} vs Rest (AUC = {roc_auc:.2f})')
+
+plt.figure(figsize=(10, 6))
+plot_roc_curve(rf_model, X_test, y_test, 'Random Forest')
+plot_roc_curve(svm_model, X_test, y_test, 'SVM')
+plot_roc_curve(gb_model, X_test, y_test, 'Gradient Boosting')
+plt.plot([0, 1], [0, 1], 'k--')
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('ROC Curve')
+plt.legend()
+plt.show()
+
+# Matrizes de Confusão
+fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+sns.heatmap(rf_conf_matrix, annot=True, fmt='d', ax=axes[0])
+axes[0].set_title('Random Forest Confusion Matrix')
+sns.heatmap(svm_conf_matrix, annot=True, fmt='d', ax=axes[1])
+axes[1].set_title('SVM Confusion Matrix')
+sns.heatmap(gb_conf_matrix, annot=True, fmt='d', ax=axes[2])
+axes[2].set_title('Gradient Boosting Confusion Matrix')
+plt.show()
