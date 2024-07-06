@@ -20,6 +20,26 @@ def load_data():
 
     return x, y
 
+def plotar_variaveis_categoricas():
+    categorical_cols = ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'ca', 'thal']
+    n_cols = len(categorical_cols)
+    n_rows = (n_cols + 3) // 4
+    fig, axes = plt.subplots(n_rows, 4, figsize=(20, 5 * n_rows))
+    fig.set_size_inches(12.8, 7.2)
+    axes = axes.flatten()
+
+    for i, col in enumerate(categorical_cols):
+        sns.countplot(x=col, data=data, ax=axes[i])
+        axes[i].set_title(f'{col}')
+        axes[i].set_xlabel('')
+        axes[i].set_ylabel('')
+
+    for j in range(i + 1, len(axes)):
+        fig.delaxes(axes[j])
+
+    plt.tight_layout()
+    plt.show()
+
 dados_x, dados_y = load_data()
 data = pd.concat([dados_x, dados_y], axis=1)
 
@@ -36,11 +56,7 @@ print(data.head())
 # Análise descritiva
 print(data.describe())
 
-# Distribuição das variáveis categóricas
-categorical_cols = ['sex', 'cp', 'fbs', 'restecg', 'exang', 'slope', 'ca', 'thal']
-for col in categorical_cols:
-    sns.countplot(x=col, data=data)
-    plt.show()
+plotar_variaveis_categoricas()
 
 # Correlação entre variáveis
 plt.figure(figsize=(12, 8))
@@ -79,7 +95,7 @@ X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.2,
 
 # Função para Treinamento e Avaliação dos Modelos
 def train_and_evaluate_model(model, params):
-    grid_search = GridSearchCV(model, params, cv=10, scoring='accuracy')
+    grid_search = GridSearchCV(model, params, cv=10, scoring='accuracy', n_jobs=-1)
     grid_search.fit(X_train, y_train)
     best_model = grid_search.best_estimator_
     y_pred = best_model.predict(X_test)
